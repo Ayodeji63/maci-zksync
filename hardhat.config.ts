@@ -7,12 +7,71 @@ import "@matterlabs/hardhat-zksync-upgradable";
 import * as dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import path from "path";
+import { task, subtask } from "hardhat/config";
+import fs from "fs";
 
 dotenv.config();
 const privKey = process.env.WALLET_PRIVATE_KEY
 
 // const __filename = fileURLToPath(import.meta.url);
 // const __dirname = path.dirname(__filename);
+
+/**
+ * Allow a copy a directory from source to target
+ * @param source - the source directory
+ * @param target - the target directory
+ */
+
+function copyDirectory(source: string, target: string): void {
+  if (!fs.existsSync(target)) {
+    fs.mkdirSync(target, { recursive: true });
+  }
+
+  if (!fs.existsSync(source)) {
+    return;
+  }
+
+  const files = fs.readdirSync(source);
+
+  files.forEach((file: string) => {
+    const sourcePath = path.join(source, file);
+    const targetPath = path.join(target, file);
+
+    if (fs.lstatSync(sourcePath).isDirectory()) {
+      copyDirectory(sourcePath, targetPath);
+    } else {
+      fs.copyFileSync(sourcePath, targetPath);
+    }
+  });
+}
+
+// Define a subtask to copy artifacts
+subtask("copy-maci-artifacts", async (_, { config }) => {
+  const sourceDir = path.resolve(
+    __dirname,
+    "./node_modules/maci-contracts/build/artifacts/contracts/"
+  );
+  const destDir = path.resolve(
+    config.paths.artifacts,
+    "maci-contracts",
+    "contracts"
+  );
+
+  copyDirectory(sourceDir, destDir);
+});
+
+// Override the existing compile task
+task("compile", async (args, hre, runSuper) => {
+  // Before compilation move over artifacts
+  await hre.run("copy-maci-artifacts");
+
+  // Run the original compile task
+  await runSuper(args);
+
+  // After compilation, run the subtask to copy MACI artifacts
+  await hre.run("copy-maci-artifacts");
+});
+
 
 const config: HardhatUserConfig = {
   defaultNetwork: "zkSyncSepoliaTestnet",
